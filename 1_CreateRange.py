@@ -6,19 +6,15 @@ import os
 input_dir = "/lustre/nobackup/WUR/ESG/zhou111/2_RQ1_Data/2_shp_StudyArea"
 output_dir = "/lustre/nobackup/WUR/ESG/zhou111/2_RQ1_Data/2_StudyArea"
 StudyAreas = ['LaPlata', 'Indus', 'Yangtze', 'Rhine']
-res = 0.5  # degree resolution
 
-# Align edges to .25/.75 pixel centers
-def align_edges(xmin, xmax, ymin, ymax, res):
-    xmin_aligned = np.floor(xmin * 2) / 2 + 0.25
-    xmax_aligned = np.ceil(xmax * 2) / 2 - 0.25
-    ymin_aligned = np.floor(ymin * 2) / 2 + 0.25
-    ymax_aligned = np.ceil(ymax * 2) / 2 - 0.25
-    return xmin_aligned, xmax_aligned, ymin_aligned, ymax_aligned
+res = 0.5  # degree resolution
+xmin_global, xmax_global = -179.75, 179.75
+ymax_global, ymin_global = 89.75, -89.75
 
 for studyarea in StudyAreas:
     shp_file = os.path.join(input_dir, studyarea, f"{studyarea}.shp")
     out_nc = os.path.join(output_dir, studyarea, "range.nc")
+    out_bbox = os.path.join(output_dir, studyarea, "bbox.txt")
     os.makedirs(os.path.dirname(out_nc), exist_ok=True)
 
     # Read shapefile
@@ -28,16 +24,13 @@ for studyarea in StudyAreas:
     # Original extent
     xmin, xmax, ymin, ymax = layer.GetExtent()
 
-    # Expand bounding box by half pixel in each direction
-    xmin -= res / 2
-    xmax += res / 2
-    ymin -= res / 2
-    ymax += res / 2
+    # Snap extent to the global 0.5° grid
+    xmin = np.floor((xmin - xmin_global) / res) * res + xmin_global
+    xmax = np.ceil((xmax - xmin_global) / res) * res + xmin_global
+    ymin = np.floor((ymin - ymin_global) / res) * res + ymin_global
+    ymax = np.ceil((ymax - ymin_global) / res) * res + ymin_global
 
-    # Align edges to .25/.75 centers
-    xmin, xmax, ymin, ymax = align_edges(xmin, xmax, ymin, ymax, res)
-
-    # Compute coordinate arrays
+    # Create lon/lat arrays
     lon = np.arange(xmin, xmax + 0.001, res)
     lat = np.arange(ymax, ymin - 0.001, -res)
     width, height = len(lon), len(lat)
@@ -51,7 +44,7 @@ for studyarea in StudyAreas:
     band = target_ds.GetRasterBand(1)
     band.Fill(0)
 
-    # Rasterize with ALL_TOUCHED
+    # Rasterize
     gdal.RasterizeLayer(
         target_ds,
         [1],
@@ -60,14 +53,21 @@ for studyarea in StudyAreas:
         options=["ALL_TOUCHED=TRUE"]
     )
 
-    # Read mask array
     arr = band.ReadAsArray()
 
-    # Save to NetCDF
+    # Save mask as NetCDF
     da = xr.DataArray(arr, coords=[('lat', lat), ('lon', lon)], name='mask')
-    da.to_netcdf(out_nc)
+    da['lat'].attrs = {'units': 'degrees_north', 'standard_name': 'latitude'}
+    da['lon'].attrs = {'units': 'degrees_east', 'standard_name': 'longitude'}
+    xr.Dataset({'mask': da}).to_netcdf(out_nc)
+
+    # Save bounding box for CDO
+    with open(out_bbox, 'w') as f:
+        f.write(f"{xmin},{xmax},{ymin},{ymax}\n")
 
     print(f"{studyarea} -> {out_nc}")
+    print(f"Bounding box saved: {xmin},{xmax},{ymin},{ymax}")
+
 
 
 
