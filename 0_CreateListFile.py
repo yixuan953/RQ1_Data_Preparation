@@ -1,7 +1,7 @@
 import pandas as pd
 
 # Path to your Excel file
-excel_file = "/lustre/nobackup/WUR/ESG/zhou111/1_RQ1_Code/1_Data_Preparation/S0_Cultivar_SowingDate_Selections_Listfiles.xlsx"
+excel_file = "/lustre/nobackup/WUR/ESG/zhou111/1_RQ1_Code/1_Data_Preparation/S1_Listfiles.xlsx"
 
 # Read all sheets into a dictionary
 all_sheets = pd.read_excel(excel_file, sheet_name=None)  # None loads all sheets
