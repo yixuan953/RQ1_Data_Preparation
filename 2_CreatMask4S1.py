@@ -4,7 +4,7 @@ import xarray as xr
 import numpy as np
 
 # Define basins and crops
-basins = ["Indus", "Rhine", "LaPlata", "Yangtze"]
+basins = ["Rhine"] # ["Indus", "Rhine", "LaPlata", "Yangtze"]
 
 # Logical crop names and filename variations
 crops = {
