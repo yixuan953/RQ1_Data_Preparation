@@ -1021,124 +1021,20 @@ CutParaAdd2Mask(){
 }
 # CutParaAdd2Mask
 
-# 6 - Cut the fertilization and irrigation files
-GetGlobalNPfert(){
-
-    # Set base directories
-    fert_dir="/lustre/nobackup/WUR/ESG/zhou111/2_RQ1_Data/1_Global/Fertilization"
-    output_dir="/lustre/nobackup/WUR/ESG/zhou111/2_RQ1_Data/1_Global/Fertilization/Aggregated"
-    
-    mkdir -p "$output_dir"
-    
-    # Define crop types and their search patterns
-    declare -A crop_patterns=(
-        ["Rice"]="*Rice*" 
-        ["Maize"]="*Maize*"
-        ["Soybean"]="*Soybean*"
-        ["Wheat"]="*Wheat*"
-    )
-    
-    for crop in "${!crop_patterns[@]}"; do
-        echo "=== Processing $crop ==="
-        
-        # Find all files for this crop type
-        crop_files=()
-        IFS='|' read -ra patterns <<< "${crop_patterns[$crop]}"
-        
-        for pattern in "${patterns[@]}"; do
-            while IFS= read -r -d '' file; do
-                if [[ -f "$file" && ! "$file" =~ "EF_NOx" ]]; then
-                    crop_files+=("$file")
-                fi
-            done < <(find "$fert_dir" -maxdepth 1 -type f -iname "$pattern" -print0 2>/dev/null)
-        done
-        
-        # Remove duplicates
-        crop_files=($(printf "%s\n" "${crop_files[@]}" | sort -u))
-        
-        if [ ${#crop_files[@]} -eq 0 ]; then
-            echo "Warning: No files found for $crop"
-            continue
-        fi
-        
-        echo "Found ${#crop_files[@]} files for $crop:"
-        printf '  %s\n' "${crop_files[@]}"
-        
-        final_output="$output_dir/${crop}_NPinput_1981-2016.nc"
-        temp_dir="$output_dir/temp_${crop}"
-        mkdir -p "$temp_dir"
-        
-        # Process each file individually first
-        processed_files=()
-        for file in "${crop_files[@]}"; do
-            filename=$(basename "$file" .nc)
-            temp_file="$temp_dir/${filename}_processed.nc"
-            
-            echo "Processing: $(basename "$file")"
-            
-            # Time filter if needed
-            if ncks -m "$file" | grep -q "time"; then
-                cdo -O selyear,1981/2016 "$file" "$temp_file" 2>/dev/null || cp "$file" "$temp_file"
-            else
-                cp "$file" "$temp_file"
-            fi
-            
-            # Remove year dimension if it exists
-            if ncks -m "$temp_file" | grep -q "year"; then
-                ncks -O -x -v year "$temp_file" "$temp_file"
-            fi
-            
-            processed_files+=("$temp_file")
-        done
-        
-        # Use first processed file as base
-        base_file="${processed_files[0]}"
-        cp "$base_file" "$final_output"
-        
-        # Add variables from other files one by one
-        for ((i=1; i<${#processed_files[@]}; i++)); do
-            current_file="${processed_files[$i]}"
-            
-            # Get list of data variables (exclude coordinates)
-            data_vars=$(ncks -m "$current_file" | grep "Variables:" -A 100 | \
-                       grep -E "^\s*[^:]*:" | awk -F: '{print $1}' | \
-                       grep -v -E "^(lat|lon|time|year|level|bnds|bounds)" | tr -d ' ')
-            
-            if [ -n "$data_vars" ]; then
-                echo "Adding variables from $(basename "${crop_files[$i]}"): $data_vars"
-                
-                # Add each variable individually
-                for var in $data_vars; do
-                    ncks -A -v "$var" "$current_file" "$final_output" 2>/dev/null
-                done
-            fi
-        done
-        
-        # Add EF_NOx if it exists
-        ef_nox_file="$fert_dir/EF_NOx.nc"
-        if [ -f "$ef_nox_file" ]; then
-            echo "Adding EF_NOx variable"
-            ef_nox_temp="$temp_dir/ef_nox_temp.nc"
-            
-            if ncks -m "$ef_nox_file" | grep -q "time"; then
-                cdo -O selyear,1981/2016 "$ef_nox_file" "$ef_nox_temp"
-            else
-                cp "$ef_nox_file" "$ef_nox_temp"
-            fi
-            
-            ncks -A -v "EF_NOx" "$ef_nox_temp" "$final_output"
-            rm -f "$ef_nox_temp"
-        fi
-        
-        # Verify all variables are preserved
-        echo "Final variables in $final_output:"
-        ncks --cdl -m "$final_output" | grep "variables:" -A 50 | grep -v "//"
-        
-        # Cleanup
-        rm -rf "$temp_dir"
-        echo ""
-    done
-    
-    echo "Processing complete!"
+# 6 - Create the fertilization files for 4 basins
+# 6-1: Merge the fertilization 
+MergeGlobalFert(){
+    source /home/WUR/zhou111/miniconda3/etc/profile.d/conda.sh
+    conda activate myenv
+    python /lustre/nobackup/WUR/ESG/zhou111/1_RQ1_Code/1_Data_Preparation/6_1_Merge_GlobalFert.py
+    conda deactivate
 }
-GetGlobalNPfert
+MergeGlobalFert
+
+CutFertFiles(){
+    source /home/WUR/zhou111/miniconda3/etc/profile.d/conda.sh
+    conda activate myenv
+    python /lustre/nobackup/WUR/ESG/zhou111/1_RQ1_Code/1_Data_Preparation/6_2_Cut_Fert.py
+    conda deactivate    
+}
+CutFertFiles
